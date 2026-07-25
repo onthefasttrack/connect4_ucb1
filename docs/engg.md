@@ -139,7 +139,7 @@ The test suite is intentionally layered:
 - `tests/test_network_trainer.py` checks tensor shapes, loss finiteness, sample
   format, and the small-agent evaluation baseline.
 - `tests/test_app_smoke.py` runs every chapter through Streamlit’s testing API
-  and exercises a board control.
+  and exercises a board control plus repeated UCB1 guesses.
 
 Run all tests with:
 

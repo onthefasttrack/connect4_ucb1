@@ -86,6 +86,11 @@ For the next choice, the app displays every UCB parameter per arm: total pulls
 `N`, arm pulls `nᵢ`, reward sum, observed mean, `ln(N)`, exploration constant
 `c`, exploration bonus, final score, and the substituted formula.
 
+The UCB1 checkpoint begins after one warm-up pull per arm. Students predict the
+next selection, submit the guess, observe the chosen arm and return, then use
+the refreshed scores to make another guess indefinitely. Restarting restores
+the same seeded warm-up state.
+
 ### 4.5 Training
 
 Chapter 7 runs a compact in-process training session. The student selects the

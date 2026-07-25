@@ -7,6 +7,9 @@ from dataclasses import dataclass
 import numpy as np
 
 
+DEFAULT_TRUE_MEANS = np.linspace(3.0, 7.0, 4)
+
+
 def ucb1_score(
     mean: float,
     visits: int,
@@ -62,13 +65,22 @@ class BanditStats:
 class BanditSession:
     """An extendable, seeded UCB experiment with no fixed attempt horizon."""
 
-    def __init__(self, seed: int = 7, arms: int = 4, exploration_constant: float = 0.8) -> None:
+    def __init__(
+        self,
+        seed: int = 7,
+        arms: int = 4,
+        exploration_constant: float = 0.8,
+        true_means: np.ndarray | tuple[float, ...] | list[float] | None = None,
+    ) -> None:
         if arms < 1:
             raise ValueError("arms must be positive")
+        means = np.linspace(3.0, 7.0, arms) if true_means is None else np.asarray(true_means, dtype=np.float64)
+        if means.ndim != 1 or len(means) != arms:
+            raise ValueError("true_means must contain exactly one value for each arm")
         self.seed = seed
         self.exploration_constant = exploration_constant
         self.rng = np.random.default_rng(seed)
-        self.true_means = np.linspace(3.0, 7.0, arms)
+        self.true_means = means.copy()
         self.stats = BanditStats.empty(arms)
         self.pulls: list[int] = []
         self.pull_values: list[float] = []

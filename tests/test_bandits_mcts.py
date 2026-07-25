@@ -33,6 +33,13 @@ def test_bandit_session_has_no_fixed_attempt_limit_and_is_seeded():
     assert left.pull_values == right.pull_values
 
 
+def test_bandit_session_uses_student_selected_true_means():
+    means = (1.0, 2.5, -0.5, 9.0)
+    session = BanditSession(seed=12, true_means=means, exploration_constant=1.25)
+    np.testing.assert_allclose(session.true_means, means)
+    assert session.exploration_constant == 1.25
+
+
 def test_mcts_returns_policy_and_visits():
     game = ConnectK(GameConfig(rows=4, cols=4, target=3))
     result = MCTS(game).search(game.initial_state(), simulations=20, seed=3)

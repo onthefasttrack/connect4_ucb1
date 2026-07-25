@@ -70,8 +70,14 @@ def board_buttons(state: GameState, key_prefix: str, on_action) -> None:
     legal = set(GAME.legal_actions(state))
     for action, column in enumerate(columns):
         with column:
-            if st.button(f"↓ {action}", key=f"{key_prefix}-{action}", disabled=action not in legal, width="stretch"):
+            if st.button(
+                f"↓ {action}",
+                key=f"{key_prefix}-{action}",
+                disabled=action not in legal,
+                use_container_width=True,
+            ):
                 on_action(action)
+                st.rerun()
 
 
 def metric(label: str, value: str) -> None:
@@ -92,7 +98,7 @@ def ucb_chart(stats: BanditStats, exploration_constant: float = 0.8) -> None:
     fig.add_bar(x=[f"Arm {i}" for i in range(len(means))], y=means, name="average reward", marker_color="#32688b")
     fig.add_scatter(x=[f"Arm {i}" for i in range(len(scores))], y=chart_scores, mode="markers+text", text=[f"{x:.2f}" if np.isfinite(x) else "∞" for x in scores], textposition="top center", name="UCB score", marker=dict(size=12, color="#b94a45"))
     fig.update_layout(height=330, margin=dict(l=10,r=10,t=30,b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", legend=dict(orientation="h"))
-    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 
 def ucb_calculation_rows(stats: BanditStats, exploration_constant: float) -> list[dict[str, str]]:
@@ -159,39 +165,81 @@ def render_lesson_text(lesson) -> None:
 
 
 def render_bandit() -> None:
-    exploration_constant = 0.8
+    st.markdown("### Choose the experiment parameters")
+    st.caption("Set the expected rewards used to generate pulls and UCB’s exploration constant c. UCB does not see the expected rewards; changing any setting starts a fresh experiment.")
+    parameter_input, *mean_inputs = st.columns([0.85, 1, 1, 1, 1])
+    with parameter_input:
+        exploration_constant = float(
+            st.number_input(
+                "Exploration c",
+                min_value=0.0,
+                value=0.8,
+                step=0.1,
+                key="bandit_exploration_constant",
+            )
+        )
+    selected_means: list[float] = []
+    for arm, column in enumerate(mean_inputs):
+        with column:
+            selected_means.append(
+                float(
+                    st.number_input(
+                        f"A{arm} expected reward",
+                        value=float(np.linspace(3.0, 7.0, 4)[arm]),
+                        step=0.25,
+                        key=f"bandit_true_mean_{arm}",
+                    )
+                )
+            )
+    true_means = tuple(selected_means)
     session = st.session_state.get("bandit_session")
-    if session is None or session.seed != st.session_state.seed:
-        session = BanditSession(seed=st.session_state.seed, arms=4, exploration_constant=exploration_constant)
+    if (
+        session is None
+        or session.seed != st.session_state.seed
+        or session.exploration_constant != exploration_constant
+        or tuple(session.true_means) != true_means
+    ):
+        session = BanditSession(
+            seed=st.session_state.seed,
+            arms=4,
+            exploration_constant=exploration_constant,
+            true_means=true_means,
+        )
         st.session_state.bandit_session = session
     st.markdown("### A hidden world, four choices")
-    st.write("Each row below is evidence the learner has earned. The bandit’s true average is shown separately so you can compare what UCB knows with what is actually hidden.")
-    add_one, add_ten, custom, reset = st.columns([1, 1, 1.25, 1])
+    st.write("The evidence below is what the learner has earned. UCB chooses from observed returns and the exploration value c.")
+    add_one, add_ten, attempts_input, custom, reset = st.columns([1, 1, 1.25, 0.7, 1])
     with add_one:
-        if st.button("Run UCB ×1", key="bandit_add_one", width="stretch"):
+        if st.button("Run UCB ×1", key="bandit_add_one", use_container_width=True):
             session.add_attempts(1)
     with add_ten:
-        if st.button("Run UCB ×10", key="bandit_add_ten", width="stretch"):
+        if st.button("Run UCB ×10", key="bandit_add_ten", use_container_width=True):
             session.add_attempts(10)
-    with custom:
+    with attempts_input:
         attempts = st.number_input("Attempts to add", min_value=1, value=25, step=1, key="bandit_custom_attempts")
-        if st.button("Add attempts", key="bandit_add_custom", width="stretch"):
+    with custom:
+        st.write("")
+        if st.button("Add attempts", key="bandit_add_custom"):
             session.add_attempts(int(attempts))
     with reset:
-        if st.button("Reset experiment", key="bandit_reset", width="stretch"):
+        if st.button("Reset experiment", key="bandit_reset", use_container_width=True):
             st.session_state.bandit_session = BanditSession(
-                seed=st.session_state.seed, arms=4, exploration_constant=exploration_constant
+                seed=st.session_state.seed,
+                arms=4,
+                exploration_constant=exploration_constant,
+                true_means=true_means,
             )
             session = st.session_state.bandit_session
 
     stats = session.stats
+    history_stats = BanditStats.empty(len(session.true_means))
     pull_rows: list[dict[str, str | int]] = []
     for round_ix, (arm, reward, scores) in enumerate(
         zip(session.pulls, session.pull_values, session.selection_scores), start=1
     ):
-        visit_number = int(stats.counts[arm]) + 1
+        visit_number = int(history_stats.counts[arm]) + 1
         selected_score = scores[arm]
-        stats.update(arm, reward)
+        history_stats.update(arm, reward)
         pull_rows.append(
             {
                 "Pull": round_ix,
@@ -205,24 +253,14 @@ def render_bandit() -> None:
     ucb_chart(stats, exploration_constant)
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown("**Observed pulls**")
-        st.write(" → ".join(f"A{a}" for a in session.pulls) or "No pulls yet. Run UCB to begin the experiment.")
+        with st.expander("Observed pulls", expanded=False):
+            st.write(" → ".join(f"A{a}" for a in session.pulls) or "No pulls yet. Run UCB to begin the experiment.")
     with col2:
         metric("Total decisions", str(stats.total_visits))
         metric("Most visited", f"A{int(np.argmax(stats.counts))}" if stats.total_visits else "—")
-    st.markdown("### Returns observed so far")
-    st.dataframe(pull_rows, hide_index=True, width="stretch")
-
-    st.markdown("### Hidden reward model — revealed for this lesson")
-    st.caption("UCB never receives these averages. They are shown so you can compare its estimates with the true reward process.")
-    st.dataframe(
-        [
-            {"Bandit": f"A{arm}", "Hidden average return": f"{true_mean:.3f}"}
-            for arm, true_mean in enumerate(session.true_means)
-        ],
-        hide_index=True,
-        width="stretch",
-    )
+    with st.expander("Returns observed so far", expanded=False):
+        st.caption("One row per actual pull: the selected arm, its pull number, the sampled reward, and UCB score before the choice.")
+        st.dataframe(pull_rows, hide_index=True, use_container_width=True)
 
     st.markdown("### Next UCB decision: every number exposed")
     st.latex(r"\mathrm{UCB}_i = \bar{R}_i + c\sqrt{\frac{\ln(N)}{n_i}}")
@@ -233,23 +271,125 @@ def render_bandit() -> None:
     )
     if stats.total_visits == 0:
         st.info("Before the first pull, every bandit is unvisited, so every UCB score is +∞. Run one or more attempts to reveal the finite calculation.")
-    st.dataframe(ucb_calculation_rows(stats, exploration_constant), hide_index=True, width="stretch")
+    st.dataframe(ucb_calculation_rows(stats, exploration_constant), hide_index=True, use_container_width=True)
 
 
 def render_ucb_checkpoint() -> None:
-    stats = BanditStats(np.array([8, 2, 0, 5]), np.array([34.0, 12.0, 0.0, 25.0]))
-    scores = stats.scores(0.8)
+    st.markdown("### Choose the experiment parameters")
+    st.caption("Set the expected rewards and exploration constant c for this prediction lab. Changing any setting restarts the seeded warm-up evidence.")
+    parameter_input, *mean_inputs = st.columns([0.85, 1, 1, 1, 1])
+    with parameter_input:
+        exploration_constant = float(
+            st.number_input(
+                "Exploration c",
+                min_value=0.0,
+                value=0.8,
+                step=0.1,
+                key="checkpoint_exploration_constant",
+            )
+        )
+    selected_means: list[float] = []
+    for arm, column in enumerate(mean_inputs):
+        with column:
+            selected_means.append(
+                float(
+                    st.number_input(
+                        f"A{arm} expected reward",
+                        value=float(np.linspace(3.0, 7.0, 4)[arm]),
+                        step=0.25,
+                        key=f"checkpoint_true_mean_{arm}",
+                    )
+                )
+            )
+    true_means = tuple(selected_means)
+    session = st.session_state.get("ucb_checkpoint_session")
+    if (
+        session is None
+        or session.seed != st.session_state.seed
+        or session.exploration_constant != exploration_constant
+        or tuple(session.true_means) != true_means
+    ):
+        session = BanditSession(
+            seed=st.session_state.seed,
+            arms=4,
+            exploration_constant=exploration_constant,
+            true_means=true_means,
+        )
+        session.add_attempts(4)  # One observation per arm makes the first guess informative.
+        st.session_state.ucb_checkpoint_session = session
+        st.session_state.ucb_guess_history = []
+
+    stats = session.stats
+    scores = stats.scores(exploration_constant)
+    st.markdown("### Current evidence")
+    st.write("UCB first sampled every arm once. Use the complete decision state below to predict its next choice, then repeat as many times as you like.")
+    evidence_total, evidence_c, evidence_rewards = st.columns(3)
+    with evidence_total:
+        metric("Total pulls N", str(stats.total_visits))
+    with evidence_c:
+        metric("Exploration constant c", f"{exploration_constant:.2f}")
+    with evidence_rewards:
+        metric("Total observed reward", f"{stats.reward_sums.sum():.2f}")
+    st.latex(r"\mathrm{UCB}_i = \bar{R}_i + c\sqrt{\frac{\ln(N)}{n_i}}")
+    st.caption(
+        "For every arm below: nᵢ is the number of pulls, R̄ᵢ is the observed average return, "
+        "and the last two columns show the bonus and final UCB1 score."
+    )
+    st.dataframe(ucb_calculation_rows(stats, exploration_constant), hide_index=True, use_container_width=True)
+    ucb_chart(stats, exploration_constant)
+
     st.markdown("### Predict the next arm")
-    answer = st.radio("Which arm does UCB1 choose?", ["Arm 0", "Arm 1", "Arm 2", "Arm 3"], horizontal=True, key="ucb_answer")
-    if st.button("Reveal the reasoning", key="reveal_ucb"):
-        correct = f"Arm {int(np.argmax(scores))}"
-        if answer == correct:
-            st.success(f"Correct. {correct} wins because UCB compares both average reward and uncertainty.")
+    answer = st.radio("Which arm will UCB1 select next?", ["A0", "A1", "A2", "A3"], horizontal=True, key="ucb_answer")
+    guess_col, reset_col = st.columns([2, 1])
+    with guess_col:
+        submit_guess = st.button(
+            "Submit guess & run next UCB pull",
+            key="submit_ucb_guess",
+            type="primary",
+            use_container_width=True,
+        )
+    with reset_col:
+        reset_lab = st.button("Restart lab", key="reset_ucb_lab", use_container_width=True)
+
+    if reset_lab:
+        session = BanditSession(
+            seed=st.session_state.seed,
+            arms=4,
+            exploration_constant=exploration_constant,
+            true_means=true_means,
+        )
+        session.add_attempts(4)
+        st.session_state.ucb_checkpoint_session = session
+        st.session_state.ucb_guess_history = []
+        st.rerun()
+
+    if submit_guess:
+        selected_arm = int(np.argmax(scores))
+        reward_before_update = len(session.pull_values)
+        session.add_attempts(1)
+        observed_return = session.pull_values[reward_before_update]
+        st.session_state.ucb_guess_history.append(
+            {
+                "Guess": len(st.session_state.ucb_guess_history) + 1,
+                "Your prediction": answer,
+                "UCB selected": f"A{selected_arm}",
+                "Correct": "✓" if answer == f"A{selected_arm}" else "—",
+                "Observed return": f"{observed_return:.3f}",
+            }
+        )
+        st.rerun()
+
+    history = st.session_state.ucb_guess_history
+    if history:
+        last = history[-1]
+        if last["Correct"] == "✓":
+            st.success(f"Correct: UCB chose {last['UCB selected']} and observed a return of {last['Observed return']}. The scores above are now updated for your next guess.")
         else:
-            st.info(f"The answer is {correct}. Notice that Arm 2 has never been visited, so its score is +∞.")
-        ucb_chart(stats)
+            st.info(f"UCB chose {last['UCB selected']} and observed a return of {last['Observed return']}. Read the refreshed values above, then guess again.")
+        st.markdown("### Guess history")
+        st.dataframe(history, hide_index=True, use_container_width=True)
     else:
-        st.info("Before revealing, calculate the mean and bonus for each arm on paper.")
+        st.info("Trace the row with the largest UCBᵢ, submit a prediction, then use the refreshed scores for your next guess.")
 
 
 def render_environment() -> None:
@@ -275,7 +415,7 @@ def render_mcts() -> None:
     values = result.visit_counts
     fig = go.Figure(go.Bar(x=[f"A{i}" for i in range(CONFIG.cols)], y=values, marker_color=["#b94a45" if i == result.selected_action else "#32688b" for i in range(CONFIG.cols)]))
     fig.update_layout(height=270, title="Root visit counts become the search policy", margin=dict(l=10,r=10,t=45,b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
     left, right = st.columns(2)
     with left:
         st.markdown("**Last rollout actions**")
@@ -298,7 +438,7 @@ def render_network() -> None:
     probs = np.exp(logits - logits.max()); probs /= probs.sum()
     fig = go.Figure(go.Bar(x=[f"A{i}" for i in range(CONFIG.cols)], y=probs, marker_color="#32688b"))
     fig.update_layout(height=270, title="Untrained policy: a starting point, not a strategy", margin=dict(l=10,r=10,t=45,b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
     metric("Value estimate", f"{value:+.2f}")
     st.caption("At this point the network is intentionally untrained. The next chapter shows how self-play creates its labels.")
 
@@ -324,7 +464,7 @@ def render_training() -> None:
         for name, values in metrics.items():
             fig.add_scatter(y=values, mode="lines+markers", name=name.replace("_", " ").title())
         fig.update_layout(height=300, title="One compact training trace", margin=dict(l=10,r=10,t=45,b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
         metric("Runtime", f"{st.session_state.training_elapsed:.1f}s")
         metric("Next step", "Play against the agent")
     else:
