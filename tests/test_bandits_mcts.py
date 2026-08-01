@@ -48,3 +48,7 @@ def test_mcts_returns_policy_and_visits():
     assert result.visit_counts.sum() == 19
     assert np.isclose(result.policy.sum(), 1.0)
     assert result.selected_action in game.legal_actions(game.initial_state())
+    assert len(result.simulation_records) == 20
+    assert result.simulation_records[0].selection_actions == ()
+    assert result.simulation_records[0].credited_root_action is None
+    assert result.simulation_records[-1].root_visits_after == 20

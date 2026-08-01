@@ -48,6 +48,16 @@ st.markdown(
 
 CONFIG = GameConfig(rows=5, cols=6, target=4, gravity=True)
 GAME = ConnectK(CONFIG)
+CHAPTER_SLUGS = (
+    "predictions-to-decisions",
+    "multi-armed-bandits",
+    "ucb1-optimism",
+    "games-are-environments",
+    "monte-carlo-tree-search",
+    "policy-value-networks",
+    "alphazero-loop",
+    "play-against-agent",
+)
 
 
 def board_view(state: GameState, legal: tuple[int, ...] = ()) -> None:
@@ -408,7 +418,16 @@ def render_environment() -> None:
 
 def render_mcts() -> None:
     st.markdown("### Search without a neural network")
-    simulations = st.slider("Simulations", 5, 80, 30, 5, key="mcts_sims")
+    simulation_control, reset_control = st.columns([2, 1])
+    with simulation_control:
+        simulations = st.slider("Simulations", 5, 80, 30, 5, key="mcts_sims")
+    with reset_control:
+        st.write("")
+        reset_mcts = st.button("Reset search board", key="reset_mcts")
+    if reset_mcts:
+        st.session_state.mcts_state = GAME.initial_state()
+        st.rerun()
+
     state = st.session_state.mcts_state
     board_view(state)
     result = MCTS(GAME).search(state, simulations=simulations, seed=st.session_state.seed)
@@ -425,6 +444,45 @@ def render_mcts() -> None:
         metric("Root value", f"{result.root_value:+.2f}")
     if st.button("Apply the searched move", key="apply_mcts"):
         st.session_state.mcts_state = GAME.step(state, result.selected_action)
+        st.rerun()
+
+    st.markdown("### Full MCTS working")
+    st.caption(
+        "Each row is one simulation. Selection follows the tree, rollout samples actions until the game ends, "
+        "then the terminal result is backed up through the visited path. A root action receives a visit whenever "
+        "the simulation travelled through that child; the first simulation only expands the root."
+    )
+    simulation_rows = []
+    for record in result.simulation_records:
+        simulation_rows.append(
+            {
+                "Simulation": record.simulation,
+                "Selection path": " → ".join(f"A{action}" for action in record.selection_actions) or "root expansion",
+                "Rollout": " → ".join(f"A{action}" for action in record.rollout_actions) or "none",
+                "Full trajectory": " → ".join(f"A{action}" for action in record.trajectory) or "root only",
+                "Conclusion": record.outcome,
+                "Backed-up value": f"{record.backed_up_value:+.1f}",
+                "Root action credited": "—" if record.credited_root_action is None else f"A{record.credited_root_action}",
+                "Root visits after": record.root_visits_after,
+                "Root value after": f"{record.root_value_after:+.3f}",
+            }
+        )
+    st.dataframe(simulation_rows, hide_index=True, use_container_width=True)
+    st.markdown("**How the simulations become the next policy**")
+    st.dataframe(
+        [
+            {
+                "Root action": row["label"],
+                "Visits": row["visits"],
+                "Mean backed-up value": f"{float(row['value']):+.3f}",
+                "Prior": f"{float(row['prior']):.3f}",
+                "Selected": "✓" if int(row["action"]) == result.selected_action else "",
+            }
+            for row in result.tree_rows
+        ],
+        hide_index=True,
+        use_container_width=True,
+    )
 
 
 def render_network() -> None:
@@ -501,8 +559,19 @@ def main() -> None:
     st.session_state.seed = int(st.sidebar.number_input("Experiment seed", min_value=0, max_value=9999, value=st.session_state.seed, step=1))
     st.sidebar.markdown("### Chapters")
     names = [lesson.title for lesson in LESSONS]
-    chapter = st.sidebar.radio("Chapter", names, label_visibility="collapsed")
-    index = names.index(chapter)
+    requested_slug = str(st.query_params.get("chapter", CHAPTER_SLUGS[0]))
+    index = CHAPTER_SLUGS.index(requested_slug) if requested_slug in CHAPTER_SLUGS else 0
+    if requested_slug not in CHAPTER_SLUGS:
+        st.query_params["chapter"] = CHAPTER_SLUGS[0]
+    for chapter_index, chapter_name in enumerate(names):
+        if st.sidebar.button(
+            chapter_name,
+            key=f"chapter-{CHAPTER_SLUGS[chapter_index]}",
+            type="primary" if chapter_index == index else "secondary",
+            use_container_width=True,
+        ):
+            st.query_params["chapter"] = CHAPTER_SLUGS[chapter_index]
+            st.rerun()
     st.sidebar.progress((index + 1) / len(names))
     st.sidebar.caption(f"Chapter {index + 1} of {len(names)}")
     if "demo_state" not in st.session_state:

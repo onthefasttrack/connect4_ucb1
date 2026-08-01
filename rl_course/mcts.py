@@ -30,6 +30,21 @@ class TreeNode:
 
 
 @dataclass(frozen=True)
+class SimulationRecord:
+    """One transparent MCTS simulation, from selection through backup."""
+
+    simulation: int
+    selection_actions: tuple[int, ...]
+    rollout_actions: tuple[int, ...]
+    trajectory: tuple[int, ...]
+    outcome: str
+    backed_up_value: float
+    credited_root_action: int | None
+    root_visits_after: int
+    root_value_after: float
+
+
+@dataclass(frozen=True)
 class SearchResult:
     policy: np.ndarray
     visit_counts: np.ndarray
@@ -38,6 +53,7 @@ class SearchResult:
     root_value: float
     tree_rows: tuple[dict[str, float | int | str], ...]
     rollout_trace: tuple[int, ...]
+    simulation_records: tuple[SimulationRecord, ...]
     root: TreeNode = field(compare=False, repr=False)
 
 
@@ -80,8 +96,9 @@ class MCTS:
         rng = np.random.default_rng(seed)
         root = TreeNode(state=state, player=player)
         last_trace: tuple[int, ...] = ()
+        simulation_records: list[SimulationRecord] = []
 
-        for _ in range(simulations):
+        for simulation in range(1, simulations + 1):
             node = root
             path = [node]
             while node.children and not self.game.is_terminal(node.state):
@@ -112,9 +129,35 @@ class MCTS:
                     node.children[action] = TreeNode(child_state, child_state.current_player, node, action, float(prior))
                 last_trace = tuple(trace)
 
+            selection_actions = tuple(
+                int(visited.action_from_parent)
+                for visited in path[1:]
+                if visited.action_from_parent is not None
+            )
+            trajectory = selection_actions + tuple(trace)
+            credited_root_action = selection_actions[0] if selection_actions else None
             for visited in reversed(path):
                 visited.visits += 1
                 visited.value_sum += float(value)
+            if value > 0:
+                outcome = "win for root player"
+            elif value < 0:
+                outcome = "loss for root player"
+            else:
+                outcome = "draw"
+            simulation_records.append(
+                SimulationRecord(
+                    simulation=simulation,
+                    selection_actions=selection_actions,
+                    rollout_actions=tuple(trace),
+                    trajectory=trajectory,
+                    outcome=outcome,
+                    backed_up_value=float(value),
+                    credited_root_action=credited_root_action,
+                    root_visits_after=root.visits,
+                    root_value_after=root.value,
+                )
+            )
 
         counts = np.zeros(self.game.config.cols if self.game.config.gravity else self.game.config.rows * self.game.config.cols, dtype=np.int64)
         values = np.zeros_like(counts, dtype=np.float64)
@@ -132,4 +175,4 @@ class MCTS:
             {"action": action, "visits": int(counts[action]), "value": float(values[action]), "prior": float(child.prior), "label": f"A{action}"}
             for action, child in sorted(root.children.items())
         )
-        return SearchResult(policy, counts, values, selected, root.value, rows, last_trace, root)
+        return SearchResult(policy, counts, values, selected, root.value, rows, last_trace, tuple(simulation_records), root)

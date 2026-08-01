@@ -30,7 +30,7 @@ should be able to:
 
 ## 3. User journey
 
-The sidebar presents eight chapters and a progress indicator. Each chapter has
+The sidebar presents eight individually clickable chapter buttons and a progress indicator. The selected chapter is stored in the URL as a `chapter` query parameter, so browser refresh and shared links return to the same lesson. Each chapter has
 one primary teaching job, a short Python excerpt, and an interaction or
 prediction checkpoint.
 
@@ -40,7 +40,7 @@ prediction checkpoint.
 | 2. Multi-armed bandits | Establish exploration/exploitation | Pull-by-pull returns, reward chart, and revealed true means |
 | 3. UCB1 | Make uncertainty visible | Choose-the-next-arm checkpoint and full parameter calculation |
 | 4. Games are environments | Map RL terms to Connect-K | Resettable board and legal-action controls |
-| 5. Monte Carlo Tree Search | Show search as imagined experience | Visit-count chart and rollout trace |
+| 5. Monte Carlo Tree Search | Show search as imagined experience | Visit-count chart, resettable board, and simulation-by-simulation trace |
 | 6. Policy and value networks | Introduce function approximation | Policy probabilities and value estimate |
 | 7. The AlphaZero loop | Connect search to training | Seeded self-play and loss curves |
 | 8. Play against the agent | Turn concepts into a lab exercise | Human-versus-agent board |

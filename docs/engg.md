@@ -75,7 +75,10 @@ docs/                     Product, engineering, deployment, troubleshooting
   temperature=1.0) -> SearchResult` runs random-rollout MCTS when no evaluator
   is supplied and PUCT-like policy/value-guided search when one is supplied.
 - `SearchResult` contains the root policy, visit counts, child values, selected
-  action, root value, simplified tree rows, and the latest rollout trace.
+  action, root value, simplified tree rows, the latest rollout trace, and a
+  `SimulationRecord` for every simulation. Each record preserves the selected
+  tree path, random rollout, terminal conclusion, backed-up value, credited root
+  action, and root totals after backup so the UI can teach the complete search.
 
 The first simulation expands the root. Consequently, root child visit counts
 sum to `simulations - 1`; the root itself receives the first visit. This is
