@@ -46,7 +46,7 @@ st.markdown(
 )
 
 
-CONFIG = GameConfig(rows=5, cols=6, target=4, gravity=True)
+CONFIG = GameConfig(rows=6, cols=7, target=4, gravity=True)
 GAME = ConnectK(CONFIG)
 CHAPTER_SLUGS = (
     "predictions-to-decisions",
@@ -84,7 +84,7 @@ def board_buttons(state: GameState, key_prefix: str, on_action) -> None:
                 f"↓ {action}",
                 key=f"{key_prefix}-{action}",
                 disabled=action not in legal,
-                use_container_width=True,
+                width="stretch",
             ):
                 on_action(action)
                 st.rerun()
@@ -108,7 +108,7 @@ def ucb_chart(stats: BanditStats, exploration_constant: float = 0.8) -> None:
     fig.add_bar(x=[f"Arm {i}" for i in range(len(means))], y=means, name="average reward", marker_color="#32688b")
     fig.add_scatter(x=[f"Arm {i}" for i in range(len(scores))], y=chart_scores, mode="markers+text", text=[f"{x:.2f}" if np.isfinite(x) else "∞" for x in scores], textposition="top center", name="UCB score", marker=dict(size=12, color="#b94a45"))
     fig.update_layout(height=330, margin=dict(l=10,r=10,t=30,b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", legend=dict(orientation="h"))
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
 
 
 def ucb_calculation_rows(stats: BanditStats, exploration_constant: float) -> list[dict[str, str]]:
@@ -220,10 +220,10 @@ def render_bandit() -> None:
     st.write("The evidence below is what the learner has earned. UCB chooses from observed returns and the exploration value c.")
     add_one, add_ten, attempts_input, custom, reset = st.columns([1, 1, 1.25, 0.7, 1])
     with add_one:
-        if st.button("Run UCB ×1", key="bandit_add_one", use_container_width=True):
+        if st.button("Run UCB ×1", key="bandit_add_one", width="stretch"):
             session.add_attempts(1)
     with add_ten:
-        if st.button("Run UCB ×10", key="bandit_add_ten", use_container_width=True):
+        if st.button("Run UCB ×10", key="bandit_add_ten", width="stretch"):
             session.add_attempts(10)
     with attempts_input:
         attempts = st.number_input("Attempts to add", min_value=1, value=25, step=1, key="bandit_custom_attempts")
@@ -232,7 +232,7 @@ def render_bandit() -> None:
         if st.button("Add attempts", key="bandit_add_custom"):
             session.add_attempts(int(attempts))
     with reset:
-        if st.button("Reset experiment", key="bandit_reset", use_container_width=True):
+        if st.button("Reset experiment", key="bandit_reset", width="stretch"):
             st.session_state.bandit_session = BanditSession(
                 seed=st.session_state.seed,
                 arms=4,
@@ -270,7 +270,7 @@ def render_bandit() -> None:
         metric("Most visited", f"A{int(np.argmax(stats.counts))}" if stats.total_visits else "—")
     with st.expander("Returns observed so far", expanded=False):
         st.caption("One row per actual pull: the selected arm, its pull number, the sampled reward, and UCB score before the choice.")
-        st.dataframe(pull_rows, hide_index=True, use_container_width=True)
+        st.dataframe(pull_rows, hide_index=True, width="stretch")
 
     st.markdown("### Next UCB decision: every number exposed")
     st.latex(r"\mathrm{UCB}_i = \bar{R}_i + c\sqrt{\frac{\ln(N)}{n_i}}")
@@ -281,7 +281,7 @@ def render_bandit() -> None:
     )
     if stats.total_visits == 0:
         st.info("Before the first pull, every bandit is unvisited, so every UCB score is +∞. Run one or more attempts to reveal the finite calculation.")
-    st.dataframe(ucb_calculation_rows(stats, exploration_constant), hide_index=True, use_container_width=True)
+    st.dataframe(ucb_calculation_rows(stats, exploration_constant), hide_index=True, width="stretch")
 
 
 def render_ucb_checkpoint() -> None:
@@ -345,7 +345,7 @@ def render_ucb_checkpoint() -> None:
         "For every arm below: nᵢ is the number of pulls, R̄ᵢ is the observed average return, "
         "and the last two columns show the bonus and final UCB1 score."
     )
-    st.dataframe(ucb_calculation_rows(stats, exploration_constant), hide_index=True, use_container_width=True)
+    st.dataframe(ucb_calculation_rows(stats, exploration_constant), hide_index=True, width="stretch")
     ucb_chart(stats, exploration_constant)
 
     st.markdown("### Predict the next arm")
@@ -356,10 +356,10 @@ def render_ucb_checkpoint() -> None:
             "Submit guess & run next UCB pull",
             key="submit_ucb_guess",
             type="primary",
-            use_container_width=True,
+            width="stretch",
         )
     with reset_col:
-        reset_lab = st.button("Restart lab", key="reset_ucb_lab", use_container_width=True)
+        reset_lab = st.button("Restart lab", key="reset_ucb_lab", width="stretch")
 
     if reset_lab:
         session = BanditSession(
@@ -397,7 +397,7 @@ def render_ucb_checkpoint() -> None:
         else:
             st.info(f"UCB chose {last['UCB selected']} and observed a return of {last['Observed return']}. Read the refreshed values above, then guess again.")
         st.markdown("### Guess history")
-        st.dataframe(history, hide_index=True, use_container_width=True)
+        st.dataframe(history, hide_index=True, width="stretch")
     else:
         st.info("Trace the row with the largest UCBᵢ, submit a prediction, then use the refreshed scores for your next guess.")
 
@@ -420,7 +420,7 @@ def render_mcts() -> None:
     st.markdown("### Search without a neural network")
     simulation_control, reset_control = st.columns([2, 1])
     with simulation_control:
-        simulations = st.slider("Simulations", 5, 80, 30, 5, key="mcts_sims")
+        simulations = st.slider("Simulations", 5, 8000, 30, 5, key="mcts_sims")
     with reset_control:
         st.write("")
         reset_mcts = st.button("Reset search board", key="reset_mcts")
@@ -434,7 +434,7 @@ def render_mcts() -> None:
     values = result.visit_counts
     fig = go.Figure(go.Bar(x=[f"A{i}" for i in range(CONFIG.cols)], y=values, marker_color=["#b94a45" if i == result.selected_action else "#32688b" for i in range(CONFIG.cols)]))
     fig.update_layout(height=270, title="Root visit counts become the search policy", margin=dict(l=10,r=10,t=45,b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
     left, right = st.columns(2)
     with left:
         st.markdown("**Last rollout actions**")
@@ -449,8 +449,9 @@ def render_mcts() -> None:
     st.markdown("### Full MCTS working")
     st.caption(
         "Each row is one simulation. Selection follows the tree, rollout samples actions until the game ends, "
-        "then the terminal result is backed up through the visited path. A root action receives a visit whenever "
-        "the simulation travelled through that child; the first simulation only expands the root."
+        "then the terminal result is backed up through the visited path. Each node values the result for the player "
+        "whose turn it is there, so the value flips sign at every move on the way to the root. A root action receives "
+        "a visit whenever the simulation travelled through that child; the first simulation only expands the root."
     )
     simulation_rows = []
     for record in result.simulation_records:
@@ -467,7 +468,7 @@ def render_mcts() -> None:
                 "Root value after": f"{record.root_value_after:+.3f}",
             }
         )
-    st.dataframe(simulation_rows, hide_index=True, use_container_width=True)
+    st.dataframe(simulation_rows, hide_index=True, width="stretch")
     st.markdown("**How the simulations become the next policy**")
     st.dataframe(
         [
@@ -481,7 +482,7 @@ def render_mcts() -> None:
             for row in result.tree_rows
         ],
         hide_index=True,
-        use_container_width=True,
+        width="stretch",
     )
 
 
@@ -496,7 +497,7 @@ def render_network() -> None:
     probs = np.exp(logits - logits.max()); probs /= probs.sum()
     fig = go.Figure(go.Bar(x=[f"A{i}" for i in range(CONFIG.cols)], y=probs, marker_color="#32688b"))
     fig.update_layout(height=270, title="Untrained policy: a starting point, not a strategy", margin=dict(l=10,r=10,t=45,b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
     metric("Value estimate", f"{value:+.2f}")
     st.caption("At this point the network is intentionally untrained. The next chapter shows how self-play creates its labels.")
 
@@ -522,7 +523,7 @@ def render_training() -> None:
         for name, values in metrics.items():
             fig.add_scatter(y=values, mode="lines+markers", name=name.replace("_", " ").title())
         fig.update_layout(height=300, title="One compact training trace", margin=dict(l=10,r=10,t=45,b=10), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
         metric("Runtime", f"{st.session_state.training_elapsed:.1f}s")
         metric("Next step", "Play against the agent")
     else:
@@ -568,7 +569,7 @@ def main() -> None:
             chapter_name,
             key=f"chapter-{CHAPTER_SLUGS[chapter_index]}",
             type="primary" if chapter_index == index else "secondary",
-            use_container_width=True,
+            width="stretch",
         ):
             st.query_params["chapter"] = CHAPTER_SLUGS[chapter_index]
             st.rerun()

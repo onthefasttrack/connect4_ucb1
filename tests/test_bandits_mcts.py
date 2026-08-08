@@ -2,7 +2,7 @@ import numpy as np
 
 from rl_course.bandits import BanditSession, BanditStats, run_ucb_experiment, ucb1_score
 from rl_course.env import ConnectK, GameConfig
-from rl_course.mcts import MCTS
+from rl_course.mcts import MCTS, TreeNode
 
 
 def test_unvisited_ucb_arm_is_optimistic():
@@ -52,3 +52,16 @@ def test_mcts_returns_policy_and_visits():
     assert result.simulation_records[0].selection_actions == ()
     assert result.simulation_records[0].credited_root_action is None
     assert result.simulation_records[-1].root_visits_after == 20
+
+
+def test_mcts_negamax_selection_uses_the_parent_perspective():
+    game = ConnectK(GameConfig(rows=4, cols=4, target=3))
+    root_state = game.initial_state()
+    root = TreeNode(root_state, player=1, visits=10)
+    first = TreeNode(game.step(root_state, 0), player=2, parent=root, action_from_parent=0, visits=5, value_sum=3.5)
+    second = TreeNode(game.step(root_state, 1), player=2, parent=root, action_from_parent=1, visits=5, value_sum=-3.5)
+    root.children = {0: first, 1: second}
+
+    # Values at the children belong to player 2. The parent is player 1, so
+    # it should prefer the child that is worst for player 2.
+    assert MCTS(game)._select_child(root, network_guided=False) is second
