@@ -69,17 +69,21 @@ class MCTS:
             bonus = self.exploration_constant * child.prior * np.sqrt(log_parent / max(child.visits, 1))
             if child.visits == 0:
                 return float("inf") if not network_guided else bonus + 1e6
-            return child.value + bonus
+            # A child is the opponent's turn. Its value is therefore negated
+            # before the parent compares actions from its own perspective.
+            return -child.value + bonus
 
         return max(node.children.values(), key=lambda child: (score(child), -(child.action_from_parent or 0)))
 
-    def _random_rollout(self, state: GameState, rng: np.random.Generator) -> tuple[float, tuple[int, ...]]:
+    def _random_rollout(
+        self, state: GameState, rng: np.random.Generator, perspective: int
+    ) -> tuple[float, tuple[int, ...]]:
         trace: list[int] = []
         while not self.game.is_terminal(state):
             action = int(rng.choice(self.game.legal_actions(state)))
             trace.append(action)
             state = self.game.step(state, action)
-        return self.game.reward(state, perspective=1), tuple(trace)
+        return self.game.reward(state, perspective=perspective), tuple(trace)
 
     def search(
         self,
@@ -93,6 +97,8 @@ class MCTS:
         if simulations < 1:
             raise ValueError("simulations must be positive")
         player = state.current_player if player is None else player
+        if player != state.current_player:
+            raise ValueError("negamax search requires player to match state.current_player")
         rng = np.random.default_rng(seed)
         root = TreeNode(state=state, player=player)
         last_trace: tuple[int, ...] = ()
@@ -106,15 +112,17 @@ class MCTS:
                 path.append(node)
 
             if self.game.is_terminal(node.state):
-                value = self.game.reward(node.state, perspective=player)
+                # Every node stores a value from the perspective of the player
+                # who is about to move there. At a terminal state, that player
+                # is the player who did not make the final, potentially winning,
+                # move.
+                value = self.game.reward(node.state, perspective=node.state.current_player)
                 trace = ()
             else:
                 legal = self.game.legal_actions(node.state)
                 if policy_value_fn is None:
                     priors = np.full(len(legal), 1 / len(legal), dtype=np.float64)
-                    value, trace = self._random_rollout(node.state, rng)
-                    if player != 1:
-                        value = -value
+                    value, trace = self._random_rollout(node.state, rng, node.state.current_player)
                 else:
                     logits, value = policy_value_fn(node.state, node.state.current_player)
                     logits = np.asarray(logits, dtype=np.float64)
@@ -122,8 +130,6 @@ class MCTS:
                     weights = np.exp(scaled)
                     priors = weights / max(weights.sum(), 1e-12)
                     trace = ()
-                    if node.state.current_player != player:
-                        value = -value
                 for action, prior in zip(legal, priors):
                     child_state = self.game.step(node.state, action)
                     node.children[action] = TreeNode(child_state, child_state.current_player, node, action, float(prior))
@@ -136,12 +142,16 @@ class MCTS:
             )
             trajectory = selection_actions + tuple(trace)
             credited_root_action = selection_actions[0] if selection_actions else None
+            root_backed_up_value = 0.0
             for visited in reversed(path):
                 visited.visits += 1
                 visited.value_sum += float(value)
-            if value > 0:
+                if visited is root:
+                    root_backed_up_value = value
+                value = -value
+            if root_backed_up_value > 0:
                 outcome = "win for root player"
-            elif value < 0:
+            elif root_backed_up_value < 0:
                 outcome = "loss for root player"
             else:
                 outcome = "draw"
@@ -152,7 +162,7 @@ class MCTS:
                     rollout_actions=tuple(trace),
                     trajectory=trajectory,
                     outcome=outcome,
-                    backed_up_value=float(value),
+                    backed_up_value=float(root_backed_up_value),
                     credited_root_action=credited_root_action,
                     root_visits_after=root.visits,
                     root_value_after=root.value,
@@ -163,14 +173,19 @@ class MCTS:
         values = np.zeros_like(counts, dtype=np.float64)
         for action, child in root.children.items():
             counts[action] = child.visits
-            values[action] = child.value
+            # Child values belong to the opposing player; expose each action's
+            # expected value from the root player's perspective instead.
+            values[action] = -child.value
+        most_visited = np.flatnonzero(counts == counts.max())
+        highest_value = values[most_visited].max()
+        tied_actions = most_visited[np.isclose(values[most_visited], highest_value)]
+        selected = int(rng.choice(tied_actions))
         if temperature <= 0:
             policy = np.zeros_like(values, dtype=np.float64)
-            policy[int(np.argmax(counts))] = 1.0
+            policy[selected] = 1.0
         else:
             softened = counts.astype(np.float64) ** (1.0 / temperature)
             policy = softened / softened.sum() if softened.sum() else softened
-        selected = int(np.argmax(counts))
         rows = tuple(
             {"action": action, "visits": int(counts[action]), "value": float(values[action]), "prior": float(child.prior), "label": f"A{action}"}
             for action, child in sorted(root.children.items())
